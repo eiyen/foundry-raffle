@@ -8,8 +8,8 @@ import {Raffle} from "../src/Raffle.sol";
 
 contract RaffleTest is Test {
     Raffle public raffle;
-    uint256 constant TICKETFEE = 0.1 ether;
-    uint256 constant LOWERFEE = 0.01 ether;
+    uint256 constant TICKET_PRICE = 0.1 ether;
+    uint256 constant INSUFFICIENT_FUNDS_FOR_TICKET = 0.01 ether;
 
     event TicketPurchased(
         uint256 indexed ticketHolderIndex,
@@ -22,7 +22,7 @@ contract RaffleTest is Test {
     }
 
     /**
-     * buyTicket function Tests
+     * constructor Tests
      */
 
     /**
@@ -37,20 +37,24 @@ contract RaffleTest is Test {
         assert(raffle.getRaffleState() == Raffle.RaffleStates.OPEN);
     }
 
+    /**
+     * buyTicket function Tests
+     */
+
     function test_RevertWhen_TicketPurchaseFundsAreInsuficient() public {
         vm.expectRevert(
             abi.encodeWithSelector(
                 Raffle.Raffle__InsufficientFundsToPurchaseTicket.selector,
-                LOWERFEE,
-                TICKETFEE
+                INSUFFICIENT_FUNDS_FOR_TICKET,
+                TICKET_PRICE
             )
         );
-        raffle.buyTicket{value: LOWERFEE}();
+        raffle.buyTicket{value: INSUFFICIENT_FUNDS_FOR_TICKET}();
     }
 
     function test_ShouldPushTicketHolderToArray() public {
         hoax(msg.sender);
-        raffle.buyTicket{value: TICKETFEE}();
+        raffle.buyTicket{value: TICKET_PRICE}();
 
         assert(raffle.getTicketHolder(0) == msg.sender);
     }
@@ -59,7 +63,7 @@ contract RaffleTest is Test {
         hoax(msg.sender);
         vm.expectEmit(true, true, false, false, address(raffle));
         emit TicketPurchased(0, msg.sender);
-        raffle.buyTicket{value: TICKETFEE}();
+        raffle.buyTicket{value: TICKET_PRICE}();
     }
 
     /* 还有当合约状态为 CALCULATING 时，不允许调用 buyTicket 函数的情况还没有测试 */
