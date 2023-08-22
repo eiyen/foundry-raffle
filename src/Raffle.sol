@@ -23,6 +23,8 @@ contract Raffle {
     /* State Variable Deceleration */
     RaffleStates private s_raffleState;
     uint256 private s_ticketPrice;
+    uint256 private s_startTime;
+    uint256 private s_minimumOpenTime;
     address[] private s_ticketHolders;
 
     /* Event Deceleration */
@@ -37,11 +39,15 @@ contract Raffle {
         uint256 requiredAmount
     );
     error Raffle__RaffleNotOpen(RaffleStates);
+    error Raffle__MinimumOpenTimeNotReached(uint256 timeRemaining);
+    // error Raffle__MinimumOpenTimeNotReached();
 
     /* Constructor Function Deceleration */
-    constructor(uint256 ticketPrice) {
+    constructor(uint256 ticketPrice, uint256 startTime, uint256 minimumOpenTime) {
         s_ticketPrice = ticketPrice;
         s_raffleState = RaffleStates.OPEN;
+        s_startTime = startTime;
+        s_minimumOpenTime = minimumOpenTime;
     }
 
     /**
@@ -58,10 +64,16 @@ contract Raffle {
                 msg.value,
                 s_ticketPrice
             );
-
         }
         s_ticketHolders.push(msg.sender);
         emit TicketPurchased(s_ticketHolders.length - 1, msg.sender);
+    }
+
+    function pickWinner() external payable {
+        if (block.timestamp - s_startTime < s_minimumOpenTime) {
+            revert Raffle__MinimumOpenTimeNotReached(s_minimumOpenTime - (block.timestamp - s_startTime));
+            // revert Raffle__MinimumOpenTimeNotReached();
+        }
     }
 
     /**
@@ -74,5 +86,18 @@ contract Raffle {
 
     function getTicketHolder(uint256 index) external view returns (address) {
         return s_ticketHolders[index];
+    }
+
+    function getMinimumOpenTime() external view returns(uint256) {
+        return s_minimumOpenTime;
+    }
+
+    function getStartTime() external view returns(uint256) {
+        return s_startTime;
+    }
+
+    /* block.timestamp 测试 */
+    function getBlockTimestamp() external view returns(uint256) {
+        return block.timestamp;
     }
 }

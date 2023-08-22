@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console2} from "forge-std/Test.sol";
 // import "forge-std/Test.sol";
 import {RaffleScript} from "../script/Raffle.s.sol";
 import {Raffle} from "../src/Raffle.sol";
 
 contract RaffleTest is Test {
     Raffle public raffle;
+    uint256 public startTime;
     uint256 constant TICKET_PRICE = 0.1 ether;
     uint256 constant INSUFFICIENT_FUNDS_FOR_TICKET = 0.01 ether;
 
@@ -19,6 +20,7 @@ contract RaffleTest is Test {
     function setUp() public {
         RaffleScript raffleScript = new RaffleScript();
         raffle = raffleScript.run();
+        startTime = block.timestamp;
     }
 
     /**
@@ -68,4 +70,27 @@ contract RaffleTest is Test {
 
     /* 还有当合约状态为 CALCULATING 时，不允许调用 buyTicket 函数的情况还没有测试 */
     /* 这种情况需要在完成 finishCalculating 函数，能够在函数内部切换状态后再去测试 */
+
+    /**
+     * pickWinner Test
+     */
+
+    /* 测试 block.timestamp 的具体显示 */
+    function test_ShouldReturnCurrentBlockTime() public view {
+        console2.log("Current block timestamp is ", block.timestamp);
+        assert(raffle.getBlockTimestamp() == block.timestamp);
+    }
+
+    function test_RevertWhen_MinumumOpenTimeNotReached() public {
+        uint256 insufficientEndTime = startTime + raffle.getMinimumOpenTime() - 1;
+        hoax(msg.sender);
+        vm.warp(insufficientEndTime);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Raffle.Raffle__MinimumOpenTimeNotReached.selector,
+                raffle.getMinimumOpenTime() - (insufficientEndTime - startTime)
+            )
+        );
+        raffle.pickWinner();
+    }
 }
