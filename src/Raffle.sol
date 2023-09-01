@@ -11,29 +11,29 @@ pragma solidity ^0.8.20;
  */
 contract Raffle {
     /**
-     * Section 1: Enviroment Setup
+     * 第一部分：环境设置
      */
 
-    /* Type Deceleration */
+    /* 1. 声明类型 */
     enum RaffleStates {
         OPEN,
         CALCULATING
     }
 
-    /* State Variable Deceleration */
+    /* 2. 声明状态变量 */
     RaffleStates private s_raffleState;
     uint256 private s_ticketPrice;
     uint256 private s_startTime;
     uint256 private s_minimumOpenTime;
     address[] private s_ticketHolders;
 
-    /* Event Deceleration */
+    /* 3. 声明事件 */
     event TicketPurchased(
         uint256 indexed ticketHolderIndex,
         address indexed ticketHolder
     );
 
-    /* Error Function Deceleration */
+    /* 4. 声明错误函数 */
     error Raffle__InsufficientFundsToPurchaseTicket(
         uint256 sentAmount,
         uint256 requiredAmount
@@ -42,7 +42,7 @@ contract Raffle {
     error Raffle__MinimumOpenTimeNotReached(uint256 timeRemaining);
     // error Raffle__MinimumOpenTimeNotReached();
 
-    /* Constructor Function Deceleration */
+    /* 5. 定义构造函数 */
     constructor(uint256 ticketPrice, uint256 startTime, uint256 minimumOpenTime) {
         s_ticketPrice = ticketPrice;
         s_raffleState = RaffleStates.OPEN;
@@ -51,10 +51,10 @@ contract Raffle {
     }
 
     /**
-     * Section 2: Core Logic Functions
+     * 第二部分：核心逻辑函数
      */
 
-    /* buyTicket function */
+    /* 1. buyTicket 购票函数 */
     function buyTicket() external payable {
         if (s_raffleState != RaffleStates.OPEN) {
             revert Raffle__RaffleNotOpen(s_raffleState);
@@ -77,7 +77,7 @@ contract Raffle {
     }
 
     /**
-     * Section 3: Getter Functions
+     * 第三部分: 获得函数
      */
 
     function getRaffleState() external view returns (RaffleStates) {
