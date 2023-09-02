@@ -55,6 +55,12 @@ contract Raffle is VRFConsumerBaseV2 {
     error Raffle__RaffleNotCalculating(RaffleStates);
     error Raffle__MinimumOpenTimeNotReached(uint256 timeRemaining);
     error Raffle__TransferFailed(address payable winner);
+    error Raffle__UpKeepNotNeeded(
+        uint256 timeSinceOpen,
+        RaffleStates s_raffleState,
+        uint256 contractBalance,
+        uint256 playersNum
+    );
 
     // error Raffle__MinimumOpenTimeNotReached();
 
@@ -80,7 +86,9 @@ contract Raffle is VRFConsumerBaseV2 {
      * 第二部分：核心逻辑函数
      */
 
-    /* 1. buyTicket 购票函数 */
+    /**
+     * @dev 1. 购票函数
+     */
     function buyTicket() external payable {
         if (s_raffleState != RaffleStates.OPEN) {
             revert Raffle__RaffleNotOpen(s_raffleState);
@@ -95,31 +103,70 @@ contract Raffle is VRFConsumerBaseV2 {
         emit TicketPurchased(s_ticketHolders.length - 1, msg.sender);
     }
 
-    function pickWinner() external payable {
-        if (block.timestamp - s_startTime < s_minimumOpenTime) {
-            revert Raffle__MinimumOpenTimeNotReached(
-                s_minimumOpenTime - (block.timestamp - s_startTime)
+    /**
+     * @dev 2. Chainlink Automation 条件检查函数
+     * 
+     * 只有当以下四个条件都通过时，才会返回 upkeepNeeded 为真：
+     * 1. 间隔时长足够。
+     * 2. 抽奖合约处于开放状态。
+     * 3. 合约有余额。
+     * 4. 合约有玩家参与。
+     */
+    function checkUpkeep(
+        bytes memory /* checkData */
+    ) public view returns (bool upkeepNeeded, bytes memory /* PerformData */) {
+        bool enoughInterval = block.timestamp - s_startTime >=
+            s_minimumOpenTime;
+        bool isRaffleOpen = s_raffleState == RaffleStates.OPEN;
+        bool hasBalance = address(this).balance > 0;
+        bool hasPlayers = s_ticketHolders.length > 0;
+
+        upkeepNeeded = (enoughInterval &&
+            isRaffleOpen &&
+            hasBalance &&
+            hasPlayers);
+        if (!upkeepNeeded) {
+            revert Raffle__UpKeepNotNeeded(
+                block.timestamp - s_startTime,
+                s_raffleState,
+                address(this).balance,
+                s_ticketHolders.length
             );
-            // revert Raffle__MinimumOpenTimeNotReached();
         }
-        if (s_raffleState != RaffleStates.OPEN) {
-            revert Raffle__RaffleNotOpen(s_raffleState);
+        
+        return (upkeepNeeded, "0x0");
+    }
+
+    /**
+     * @dev 3. Chainlink Automation 实际执行函数
+     */
+    function performUpkeep(bytes calldata /* performData */) external payable {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+        if (!upkeepNeeded) {
+            revert Raffle__UpKeepNotNeeded(
+                block.timestamp - s_startTime,
+                s_raffleState,
+                address(this).balance,
+                s_ticketHolders.length
+            );
         }
 
         s_raffleState = RaffleStates.CALCULATING;
 
         /**
+         * @dev 4. Chainlink VRF 调用函数
+         * 
          * @param i_maximumGasPrice 允许的最大 gas 价格，这里是 30 gWei
          * @param i_subscriptionId 订阅的 VRF 账号ID，详见：https://vrf.chain.link/sepolia
          * @param REQUEST_CONFIRMATIONS 经过确认的区块数，默认交易在3个区块后确认
          * @param i_callbackGasLimit 回调函数的 gas 消耗上限
          * @param NUM_WORDS 请求的随机数数量
          *
-         * @dev 回调函数是执行完 requestRandomWords 函数后，紧接着的 fulfillRandomWords 函数
-         * @dev 在这笔交易中，我们需要执行两个函数：requestRandomWords 和 fulfillRandomWords
-         * @dev 由于交易的原子性，任何一笔函数发生错误，整个交易都会失败。
+         * @dev 回调函数是执行完 requestRandomWords 函数后，紧接着的 fulfillRandomWords 
+         * 函数。在这笔交易中，我们需要执行两个函数：requestRandomWords 和 fulfillRandomWords，
+         * 由于交易的原子性，任何一笔函数发生错误，整个交易都会失败。
          */
-        uint256 requestId = i_vrfCoordinator.requestRandomWords(
+        i_vrfCoordinator.requestRandomWords(
             i_maximumGasPrice,
             i_subscriptionId,
             REQUEST_CONFIRMATIONS,
@@ -128,8 +175,9 @@ contract Raffle is VRFConsumerBaseV2 {
         );
     }
 
+    /* 5. Chainlink VRF 回调函数 */
     function fulfillRandomWords(
-        uint256 requestId,
+        uint256 /* requestId */,
         uint256[] memory randomWords
     ) internal override {
         // 合约设计范式：CEI：Checks, Effects, Interactions（检查、效果、交互）
