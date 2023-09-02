@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import {VRFConsumerBaseV2} from "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 
 /**
  * @dev 合约的实现逻辑如下：
@@ -11,7 +12,7 @@ import {VRFCoordinatorV2Interface} from "@chainlink/contracts/src/v0.8/interface
  * 3. 进行抽奖：在达成开奖条件的情况下，通过 Chainlink VRF 获得随机数。
  * 4. 奖金转账：让随机数和参与玩家的数量取模，余数即为中奖者的序号，然后再取得该玩家的地址，最后进行转账。
  */
-contract Raffle {
+contract Raffle is VRFConsumerBaseV2 {
     /**
      * 第一部分：环境设置
      */
@@ -27,7 +28,8 @@ contract Raffle {
     uint256 private s_ticketPrice;
     uint256 private s_startTime;
     uint256 private s_minimumOpenTime;
-    address[] private s_ticketHolders;
+    address payable[] private s_ticketHolders;
+    address payable s_recentWinner;
 
     VRFCoordinatorV2Interface private i_vrfCoordinator;
     bytes32 private immutable i_maximumGasPrice;
@@ -42,6 +44,7 @@ contract Raffle {
         uint256 indexed ticketHolderIndex,
         address indexed ticketHolder
     );
+    event PickedWinner(address payable indexed winner);
 
     /* 4. 声明错误函数 */
     error Raffle__InsufficientFundsToPurchaseTicket(
@@ -49,7 +52,9 @@ contract Raffle {
         uint256 requiredAmount
     );
     error Raffle__RaffleNotOpen(RaffleStates);
+    error Raffle__RaffleNotCalculating(RaffleStates);
     error Raffle__MinimumOpenTimeNotReached(uint256 timeRemaining);
+    error Raffle__TransferFailed(address payable winner);
 
     // error Raffle__MinimumOpenTimeNotReached();
 
@@ -61,7 +66,7 @@ contract Raffle {
         address vrfCoordinator,
         bytes32 maximumGasPrice,
         uint64 subscriptionId
-    ) {
+    ) VRFConsumerBaseV2(vrfCoordinator) {
         s_ticketPrice = ticketPrice;
         s_raffleState = RaffleStates.OPEN;
         s_startTime = startTime;
@@ -86,7 +91,7 @@ contract Raffle {
                 s_ticketPrice
             );
         }
-        s_ticketHolders.push(msg.sender);
+        s_ticketHolders.push(payable(msg.sender));
         emit TicketPurchased(s_ticketHolders.length - 1, msg.sender);
     }
 
@@ -97,6 +102,11 @@ contract Raffle {
             );
             // revert Raffle__MinimumOpenTimeNotReached();
         }
+        if (s_raffleState != RaffleStates.OPEN) {
+            revert Raffle__RaffleNotOpen(s_raffleState);
+        }
+
+        s_raffleState = RaffleStates.CALCULATING;
 
         /**
          * @param i_maximumGasPrice 允许的最大 gas 价格，这里是 30 gWei
@@ -104,7 +114,7 @@ contract Raffle {
          * @param REQUEST_CONFIRMATIONS 经过确认的区块数，默认交易在3个区块后确认
          * @param i_callbackGasLimit 回调函数的 gas 消耗上限
          * @param NUM_WORDS 请求的随机数数量
-         * 
+         *
          * @dev 回调函数是执行完 requestRandomWords 函数后，紧接着的 fulfillRandomWords 函数
          * @dev 在这笔交易中，我们需要执行两个函数：requestRandomWords 和 fulfillRandomWords
          * @dev 由于交易的原子性，任何一笔函数发生错误，整个交易都会失败。
@@ -116,6 +126,34 @@ contract Raffle {
             i_callbackGasLimit,
             NUM_WORDS
         );
+    }
+
+    function fulfillRandomWords(
+        uint256 requestId,
+        uint256[] memory randomWords
+    ) internal override {
+        // 合约设计范式：CEI：Checks, Effects, Interactions（检查、效果、交互）
+        // 1. Checks：条件判断
+        if (s_raffleState != RaffleStates.CALCULATING) {
+            revert Raffle__RaffleNotCalculating(s_raffleState);
+        }
+
+        // 2.1 Effects：函数核心功能
+        s_raffleState = RaffleStates.OPEN;
+        uint256 indexOfWinner = randomWords[0] % s_ticketHolders.length;
+        address payable winner = s_ticketHolders[indexOfWinner];
+        s_recentWinner = winner;
+
+        // 2.2 Effects: 函数收尾部分
+        s_ticketHolders = new address payable[](0);
+        s_startTime = block.timestamp;
+
+        // 3. Interactions: 合约外部交互
+        (bool success, ) = winner.call{value: address(this).balance}("");
+        if (!success) {
+            revert Raffle__TransferFailed(winner);
+        }
+        emit PickedWinner(winner);
     }
 
     /**
